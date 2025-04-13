@@ -60,6 +60,9 @@ jobs:
     needs: setup-ec2
     runs-on: ubuntu-latest
 
+    outputs:
+      version: ${{ steps.extract_version.outputs.version }}
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -75,7 +78,9 @@ jobs:
         id: extract_version
         run: |
           VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "$VERSION"
 
       - name: Build project
         run: mvn clean package -DskipTests=true
@@ -112,7 +117,7 @@ jobs:
             set -e
 
             export IMAGE_NAME="${{ env.IMAGE_NAME }}"
-            export IMAGE_TAG="${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }}"
+            export IMAGE_TAG="${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.version }}"
             export MYSQL_CONTAINER_NAME="${{ env.MYSQL_CONTAINER_NAME }}"
             export MYSQL_ROOT_PASSWORD="${{ secrets.MYSQL_ROOT_PASSWORD }}"
             export SPRING_DATASOURCE_DATABASE="${{ env.SPRING_DATASOURCE_DATABASE }}"
