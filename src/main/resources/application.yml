@@ -1,0 +1,41 @@
+# Server config
+server:
+  port: 8080
+  servlet:
+    context-path: /api/v1
+
+# Spring config
+spring:
+  application:
+    name: SB app Ec2
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+  # Docker config
+#  docker:
+#    compose:
+#      enabled: false
+
+  # Datasource config
+  datasource:
+    url: jdbc:mysql://localhost:3366/sb_app_db
+    username: user
+    password: secret
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  # Jpa config
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: true
+    format-sql: true
+    database-platform: org.hibernate.dialect.MySQLDialect
+
+  # Flyway config
+  flyway:
+    enabled: true
+    url: jdbc:mysql://localhost:3366/sb_app_db
+    user: user
+    password: secret
+

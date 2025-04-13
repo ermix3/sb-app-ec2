@@ -1,0 +1,16 @@
+services:
+    mysql:
+        image: 'mysql:latest'
+        container_name: sb_app_db
+        environment:
+            - 'MYSQL_DATABASE=sb_app_db'
+            - 'MYSQL_PASSWORD=secret'
+            - 'MYSQL_ROOT_PASSWORD=toor'
+            - 'MYSQL_USER=user'
+            - 'MYSQL_ALLOW_EMPTY_PASSWORD=yes'
+            - 'MYSQL_ROOT_HOST=%'
+            - 'TZ=UTC'
+            - 'MYSQL_INITDB_SKIP_TZINFO=yes'
+        command: --log-bin-trust-function-creators=1
+        ports:
+            - '3366:3306'

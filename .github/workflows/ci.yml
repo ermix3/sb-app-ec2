@@ -1,0 +1,174 @@
+name: SB App CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  IMAGE_NAME: sb-app-ec
+  MYSQL_CONTAINER_NAME: sb-app
+  SPRING_DATASOURCE_DATABASE: sb-app-db
+  MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+
+jobs:
+  setup-ec2:
+    name: Setup Docker on EC2
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up SSH key
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+
+      - name: Install and Enable Docker on EC2
+        run: |
+          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_PUBLIC_IP }} << 'EOF'
+            # Check if Docker is already installed
+            if ! command -v docker &> /dev/null; then
+              echo "Docker not found. Installing..."
+
+              # Update packages and install dependencies
+              sudo yum update -y
+              sudo yum install -y docker
+
+              # Start and enable Docker service
+              sudo systemctl start docker
+              sudo systemctl enable docker
+
+              # Add ec2-user to docker group
+              sudo usermod -aG docker ec2-user
+
+              echo "Docker installed and enabled successfully"
+            else
+              echo "Docker is already installed"
+            fi
+
+            # Verify Docker installation
+            docker --version
+          EOF
+
+  build-and-push:
+    name: Build and Push Docker Image
+    needs: setup-ec2
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v3
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Extract version from pom.xml
+        id: extract_version
+        run: |
+          VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Version extracted: $VERSION"
+
+      - name: Build project
+        run: mvn clean package -DskipTests=true
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and Push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+
+  deploy-to-ec2:
+    name: Deploy to EC2
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up SSH key
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+
+      - name: Define image tag
+        run: echo "IMAGE_TAG=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }}" >> $GITHUB_ENV
+
+      - name: Deploy on EC2 Instance
+        run: |
+          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_PUBLIC_IP }} << 'EOF'
+            # Stop and remove existing containers if running
+            docker stop $IMAGE_NAME || true
+            docker rm -f $IMAGE_NAME || true
+
+            # Pull the new application image
+            docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }}
+            docker pull $IMAGE_TAG
+
+            # Check if MySQL container exists and is running
+            MYSQL_RUNNING=$(docker inspect --format="{{.State.Running}}" $MYSQL_CONTAINER_NAME 2>/dev/null || echo "false")
+
+            if [ "$MYSQL_RUNNING" != "true" ]; then
+              echo "MySQL container not running or doesn't exist. Creating new one..."
+
+              # Remove if exists but not running
+              docker rm $MYSQL_CONTAINER_NAME 2>/dev/null || true
+
+              # Run new MySQL container
+              docker run -d --name $MYSQL_CONTAINER_NAME \
+                -e MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD \
+                -e MYSQL_DATABASE=${{ env.SPRING_DATASOURCE_DATABASE }} \
+                -e MYSQL_USER=${{ secrets.SPRING_DATASOURCE_USERNAME }} \
+                -e MYSQL_PASSWORD=${{ secrets.SPRING_DATASOURCE_PASSWORD }} \
+                -p 3306:3306 \
+                mysql:8.0 \
+                --character-set-server=utf8mb4 \
+                --collation-server=utf8mb4_unicode_ci
+
+              # Wait for MySQL to be ready
+              echo "Waiting for MySQL to be ready..."
+              for i in {1..30}; do
+                if docker exec $MYSQL_CONTAINER_NAME mysqladmin ping -uroot -p$MYSQL_ROOT_PASSWORD --silent; then
+                  echo "MySQL is ready!"
+                  break
+                else
+                  echo "MySQL not ready yet. Waiting..."
+                  sleep 2
+                fi
+              done
+            else
+              echo "MySQL container is already running. Skipping creation."
+            fi
+
+            # Run the application container
+            docker run -d --name $IMAGE_NAME \
+              -p 80:8080 \
+              -e SPRING_PROFILES_ACTIVE=prod \
+              -e SPRING_DATASOURCE_URL="jdbc:mysql://$MYSQL_CONTAINER_NAME:3306/${{ env.SPRING_DATASOURCE_DATABASE }}?useSSL=false&allowPublicKeyRetrieval=true" \
+              -e SPRING_DATASOURCE_USERNAME="${{ secrets.SPRING_DATASOURCE_USERNAME }}" \
+              -e SPRING_DATASOURCE_PASSWORD="${{ secrets.SPRING_DATASOURCE_PASSWORD }}" \
+              -e SPRING_FLYWAY_ENABLED=true \
+              -e SPRING_FLYWAY_LOCATIONS="classpath:db/migration" \
+              -e SPRING_FLYWAY_BASELINE_ON_MIGRATION=true \
+              $IMAGE_TAG
+
+            # Health check
+            echo "Current running containers:"
+            docker ps -a
+
+            echo "Application logs (last 50 lines):"
+            docker logs $IMAGE_NAME --tail 50
+
+            echo "MySQL logs (last 20 lines):"
+            docker logs $MYSQL_CONTAINER_NAME --tail 20
+          EOF
