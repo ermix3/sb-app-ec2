@@ -12,7 +12,7 @@ env:
 
 jobs:
   setup-ec2:
-    name: Setup EC2 with Docker and NGINX
+    name: Setup EC2 with Docker
     runs-on: ubuntu-latest
 
     steps:
@@ -21,7 +21,7 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
 
-      - name: Install Docker and NGINX on EC2 if not installed
+      - name: Install Docker on EC2 if not installed
         run: |
           ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_PUBLIC_IP }} << 'EOF'
             set -e
@@ -34,25 +34,13 @@ jobs:
               sudo systemctl start docker
               sudo systemctl enable docker
               sudo usermod -aG docker ec2-user
+              echo "Docker installed successfully"
             else
               echo "Docker already installed."
             fi
 
-            echo "Checking NGINX..."
-            if ! command -v nginx &> /dev/null; then
-              echo "Installing NGINX..."
-              sudo dnf install nginx -y
-              sudo yum install -y nginx
-              sudo systemctl start nginx
-              sudo systemctl enable nginx
-            else
-              echo "NGINX already installed."
-            fi
-
             echo "Docker version:"
             docker --version
-            echo "NGINX status:"
-            sudo systemctl status nginx
           EOF
 
   build-and-push:
@@ -124,8 +112,6 @@ jobs:
             export SPRING_DATASOURCE_USERNAME="${{ secrets.SPRING_DATASOURCE_USERNAME }}"
             export SPRING_DATASOURCE_PASSWORD="${{ secrets.SPRING_DATASOURCE_PASSWORD }}"
 
-            echo "Image tag is: '$IMAGE_TAG'"
-
             echo "Stopping previous containers..."
             docker stop \$IMAGE_NAME || true
             docker rm -f \$IMAGE_NAME || true
@@ -136,11 +122,15 @@ jobs:
             echo "Pulling latest image..."
             docker pull \$IMAGE_TAG
 
+            # Create a network if it doesn't exist
+            docker network create app-network || true
+
             MYSQL_RUNNING=\$(docker inspect --format="{{.State.Running}}" \$MYSQL_CONTAINER_NAME 2>/dev/null || echo "false")
             if [ "\$MYSQL_RUNNING" != "true" ]; then
               echo "Starting MySQL container..."
               docker rm \$MYSQL_CONTAINER_NAME 2>/dev/null || true
               docker run -d --name \$MYSQL_CONTAINER_NAME \
+                --network app-network \
                 -e MYSQL_ROOT_PASSWORD=\$MYSQL_ROOT_PASSWORD \
                 -e MYSQL_DATABASE=\$SPRING_DATASOURCE_DATABASE \
                 -e MYSQL_USER=\$SPRING_DATASOURCE_USERNAME \
@@ -162,19 +152,25 @@ jobs:
               done
             else
               echo "MySQL is already running."
+              # Connect existing container to network
+              docker network connect app-network \$MYSQL_CONTAINER_NAME || true
             fi
 
             echo "Starting application container..."
             docker run -d --name \$IMAGE_NAME \
+              --network app-network \
               -p 80:8080 \
               -e SPRING_PROFILES_ACTIVE=prod \
-              -e SPRING_DATASOURCE_URL="jdbc:mysql://localhost:3306/\$SPRING_DATASOURCE_DATABASE?useSSL=false&allowPublicKeyRetrieval=true" \
+              -e SPRING_DATASOURCE_URL="jdbc:mysql://\$MYSQL_CONTAINER_NAME:3306/\$SPRING_DATASOURCE_DATABASE?useSSL=false&allowPublicKeyRetrieval=true&connectionTimeout=5000" \
               -e SPRING_DATASOURCE_USERNAME="\$SPRING_DATASOURCE_USERNAME" \
               -e SPRING_DATASOURCE_PASSWORD="\$SPRING_DATASOURCE_PASSWORD" \
               -e SPRING_FLYWAY_ENABLED=true \
               -e SPRING_FLYWAY_LOCATIONS="classpath:db/migration" \
               -e SPRING_FLYWAY_BASELINE_ON_MIGRATION=true \
               \$IMAGE_TAG
+
+            echo "Waiting for application to start..."
+            sleep 10
 
             echo "Deployment complete. Logs:"
             docker ps -a
