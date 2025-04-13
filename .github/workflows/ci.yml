@@ -166,7 +166,7 @@ jobs:
 
             echo "Starting application container..."
             docker run -d --name \$IMAGE_NAME \
-              --network host \
+              -p 80:8080 \
               -e SPRING_PROFILES_ACTIVE=prod \
               -e SPRING_DATASOURCE_URL="jdbc:mysql://localhost:3306/\$SPRING_DATASOURCE_DATABASE?useSSL=false&allowPublicKeyRetrieval=true" \
               -e SPRING_DATASOURCE_USERNAME="\$SPRING_DATASOURCE_USERNAME" \
