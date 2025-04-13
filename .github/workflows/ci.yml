@@ -41,7 +41,7 @@ jobs:
             echo "Checking NGINX..."
             if ! command -v nginx &> /dev/null; then
               echo "Installing NGINX..."
-              sudo amazon-linux-extras enable nginx1
+              sudo dnf install nginx -y
               sudo yum install -y nginx
               sudo systemctl start nginx
               sudo systemctl enable nginx
