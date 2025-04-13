@@ -80,7 +80,7 @@ jobs:
           VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "$VERSION"
+          echo "Version is: $VERSION"
 
       - name: Build project
         run: mvn clean package -DskipTests=true
@@ -123,6 +123,8 @@ jobs:
             export SPRING_DATASOURCE_DATABASE="${{ env.SPRING_DATASOURCE_DATABASE }}"
             export SPRING_DATASOURCE_USERNAME="${{ secrets.SPRING_DATASOURCE_USERNAME }}"
             export SPRING_DATASOURCE_PASSWORD="${{ secrets.SPRING_DATASOURCE_PASSWORD }}"
+
+            echo "Image tag is: '$IMAGE_TAG'"
 
             echo "Stopping previous containers..."
             docker stop \$IMAGE_NAME || true
