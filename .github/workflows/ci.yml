@@ -142,6 +142,11 @@ jobs:
             export SPRING_DATASOURCE_DATABASE="${{ env.SPRING_DATASOURCE_DATABASE }}"
             export SPRING_DATASOURCE_USERNAME="${{ secrets.SPRING_DATASOURCE_USERNAME }}"
             export SPRING_DATASOURCE_PASSWORD="${{ secrets.SPRING_DATASOURCE_PASSWORD }}"
+            export AWS_REGION="${{ env.AWS_REGION }}"
+            export ECR_REGISTRY="${{ needs.build-and-push.outputs.ecr_registry }}"
+
+            # Log in to Amazon ECR
+            aws ecr get-login-password --region \$AWS_REGION | docker login --username AWS --password-stdin \$ECR_REGISTRY
 
             echo "Stopping old app container, with IMAGE_NAME: \$IMAGE_NAME"
             docker stop \$IMAGE_NAME || true
