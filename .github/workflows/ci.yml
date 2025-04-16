@@ -9,10 +9,12 @@ env:
   IMAGE_NAME: sb-app-ec
   MYSQL_CONTAINER_NAME: sb-app
   SPRING_DATASOURCE_DATABASE: sb-app-db
+  AWS_REGION: eu-north-1
+  ECR_REPOSITORY: qualy-taste
 
 jobs:
   setup-ec2:
-    name: Setup EC2 with Docker
+    name: Setup Docker on EC2
     runs-on: ubuntu-latest
 
     steps:
@@ -44,12 +46,13 @@ jobs:
           EOF
 
   build-and-push:
-    name: Build and Push Docker Image
+    name: Build and Push Docker Image to ECR
     needs: setup-ec2
     runs-on: ubuntu-latest
 
     outputs:
       version: ${{ steps.extract_version.outputs.version }}
+      image_uri: ${{ steps.login-ecr.outputs.image_uri }}
 
     steps:
       - name: Checkout Code
@@ -73,20 +76,30 @@ jobs:
       - name: Build project
         run: mvn clean package -DskipTests=true
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Build and Push Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build and Push Docker image to ECR
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ECR_URI="$ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}"
+
+          # Tag image
+          docker build -t $ECR_URI:${{ env.VERSION }} -t $ECR_URI:latest .
+
+          # Push to ECR
+          docker push $ECR_URI:${{ env.VERSION }}
+          docker push $ECR_URI:latest
+
+          echo "image_uri=$ECR_URI:${{ env.VERSION }}" >> $GITHUB_OUTPUT
 
   deploy-to-ec2:
     name: Deploy to EC2
@@ -105,21 +118,21 @@ jobs:
             set -e
 
             export IMAGE_NAME="${{ env.IMAGE_NAME }}"
-            export IMAGE_TAG="${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.version }}"
+            export IMAGE_TAG="${{ needs.build-and-push.outputs.image_uri }}"
             export MYSQL_CONTAINER_NAME="${{ env.MYSQL_CONTAINER_NAME }}"
             export MYSQL_ROOT_PASSWORD="${{ secrets.MYSQL_ROOT_PASSWORD }}"
             export SPRING_DATASOURCE_DATABASE="${{ env.SPRING_DATASOURCE_DATABASE }}"
             export SPRING_DATASOURCE_USERNAME="${{ secrets.SPRING_DATASOURCE_USERNAME }}"
             export SPRING_DATASOURCE_PASSWORD="${{ secrets.SPRING_DATASOURCE_PASSWORD }}"
 
+            echo "Logging into Amazon ECR..."
+            aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin \$(echo \$IMAGE_TAG | cut -d'/' -f1)
+
             echo "Stopping previous containers..."
             docker stop \$IMAGE_NAME || true
             docker rm -f \$IMAGE_NAME || true
 
-            echo "Logging in to Docker Hub..."
-            docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }}
-
-            echo "Pulling latest image..."
+            echo "Pulling latest image from ECR..."
             docker pull \$IMAGE_TAG
 
             # Create a network if it doesn't exist
