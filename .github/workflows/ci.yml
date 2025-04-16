@@ -49,7 +49,7 @@ jobs:
 
     outputs:
       version: ${{ steps.extract_version.outputs.version }}
-      image_uri: ${{ steps.push-image.outputs.image_uri }}
+      image_uri: ${{ steps.push_image.outputs.image_uri }}
 
     steps:
       - name: Checkout Code
@@ -91,7 +91,7 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v1
 
       - name: Build and Push Docker Image
-        id: push-image
+        id: push_image
         env:
           IMAGE_TAG: ${{ steps.extract_version.outputs.version }}
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
@@ -99,9 +99,13 @@ jobs:
           IMAGE_URI=$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
           docker build -t $IMAGE_URI .
           docker tag $IMAGE_URI $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest
+
+          # Push both tags
           docker push $IMAGE_URI
           docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest
+
           echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+          echo "Image successfully pushed to ECR: $IMAGE_URI"
 
   deploy-to-ec2:
     name: Deploy to EC2
@@ -115,9 +119,20 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v1
+
       - name: Deploy Application to EC2
         run: |
-          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_PUBLIC_IP }} << EOF
+          ssh -o StrictHostKeyChecking=no -T ec2-user@${{ secrets.EC2_PUBLIC_IP }} << EOF
             set -e
 
             export IMAGE_NAME="${{ env.IMAGE_NAME }}"
@@ -132,11 +147,12 @@ jobs:
             docker stop \$IMAGE_NAME || true
             docker rm -f \$IMAGE_NAME || true
 
-            echo "Pulling image from ECR..."
-            docker pull \$IMAGE_URI
+            echo "Pulling image from ECR, with IMAGE_URI: \$IMAGE_URI"
 
-            echo "Creating app-network if not exists..."
-            docker network create app-network || true
+            docker pull "\$IMAGE_URI" || exit 1
+
+            echo "Ensuring app-network exists..."
+            docker network inspect app-network || docker network create app-network
 
             MYSQL_STATUS=\$(docker inspect -f '{{.State.Running}}' \$MYSQL_CONTAINER_NAME 2>/dev/null || echo "false")
             if [ "\$MYSQL_STATUS" != "true" ]; then
