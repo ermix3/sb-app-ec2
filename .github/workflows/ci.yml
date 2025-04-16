@@ -145,6 +145,12 @@ jobs:
             export AWS_REGION="${{ env.AWS_REGION }}"
             export ECR_REGISTRY="${{ needs.build-and-push.outputs.ecr_registry }}"
 
+            # Set AWS credentials in the remote EC2 instance
+            echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> ~/.bash_profile
+            echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> ~/.bash_profile
+            echo "AWS_REGION=${{ env.AWS_REGION }}" >> ~/.bash_profile
+            source ~/.bash_profile
+
             # Log in to Amazon ECR
             aws ecr get-login-password --region \$AWS_REGION | docker login --username AWS --password-stdin \$ECR_REGISTRY
 
