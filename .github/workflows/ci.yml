@@ -86,6 +86,8 @@ jobs:
       - name: Log in to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
+        with:
+          mask-password: true
 
       - name: Build and Push Docker image to ECR
         run: |
@@ -118,22 +120,19 @@ jobs:
             set -e
 
             export IMAGE_NAME="${{ env.IMAGE_NAME }}"
-            export IMAGE_TAG="${{ needs.build-and-push.outputs.image_uri }}"
+            export IMAGE_URI="${{ needs.build-and-push.outputs.image_uri }}"
             export MYSQL_CONTAINER_NAME="${{ env.MYSQL_CONTAINER_NAME }}"
             export MYSQL_ROOT_PASSWORD="${{ secrets.MYSQL_ROOT_PASSWORD }}"
             export SPRING_DATASOURCE_DATABASE="${{ env.SPRING_DATASOURCE_DATABASE }}"
             export SPRING_DATASOURCE_USERNAME="${{ secrets.SPRING_DATASOURCE_USERNAME }}"
             export SPRING_DATASOURCE_PASSWORD="${{ secrets.SPRING_DATASOURCE_PASSWORD }}"
 
-            echo "Logging into Amazon ECR..."
-            aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin \$(echo \$IMAGE_TAG | cut -d'/' -f1)
-
             echo "Stopping previous containers..."
             docker stop \$IMAGE_NAME || true
             docker rm -f \$IMAGE_NAME || true
 
             echo "Pulling latest image from ECR..."
-            docker pull \$IMAGE_TAG
+            docker pull \$IMAGE_URI
 
             # Create a network if it doesn't exist
             docker network create app-network || true
@@ -180,7 +179,7 @@ jobs:
               -e SPRING_FLYWAY_ENABLED=true \
               -e SPRING_FLYWAY_LOCATIONS="classpath:db/migration" \
               -e SPRING_FLYWAY_BASELINE_ON_MIGRATION=true \
-              \$IMAGE_TAG
+              \$IMAGE_URI
 
             echo "Waiting for application to start..."
             sleep 10
