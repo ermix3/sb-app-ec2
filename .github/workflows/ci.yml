@@ -145,6 +145,9 @@ jobs:
           region=${{ env.AWS_REGION }}
           EOL
 
+          # First, ensure .aws directory exists on EC2
+          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_PUBLIC_IP }} "mkdir -p ~/.aws"
+
           # Copy AWS credentials to EC2
           scp -o StrictHostKeyChecking=no ~/.aws/credentials ec2-user@${{ secrets.EC2_PUBLIC_IP }}:~/.aws/credentials
 
