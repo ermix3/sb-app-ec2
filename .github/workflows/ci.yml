@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 env:
   IMAGE_NAME: sb-app-ec
@@ -50,6 +51,7 @@ jobs:
     outputs:
       version: ${{ steps.extract_version.outputs.version }}
       image_uri: ${{ steps.push_image.outputs.image_uri }}
+      ecr_registry: ${{ steps.ecr-login.outputs.registry }}
 
     steps:
       - name: Checkout Code
@@ -131,7 +133,24 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Deploy Application to EC2
+        env:
+          ECR_REGISTRY: ${{ needs.build-and-push.outputs.ecr_registry }}
         run: |
+          # Create temporary AWS credentials file
+          mkdir -p ~/.aws
+          cat > ~/.aws/credentials << EOL
+          [default]
+          aws_access_key_id=${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          region=${{ env.AWS_REGION }}
+          EOL
+
+          # Copy AWS credentials to EC2
+          scp -o StrictHostKeyChecking=no ~/.aws/credentials ec2-user@${{ secrets.EC2_PUBLIC_IP }}:~/.aws/credentials
+
+          # Generate ECR auth token
+          ECR_AUTH_TOKEN=$(aws ecr get-login-password --region ${{ env.AWS_REGION }})
+
           ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_PUBLIC_IP }} << EOF
             set -e
 
@@ -143,16 +162,9 @@ jobs:
             export SPRING_DATASOURCE_USERNAME="${{ secrets.SPRING_DATASOURCE_USERNAME }}"
             export SPRING_DATASOURCE_PASSWORD="${{ secrets.SPRING_DATASOURCE_PASSWORD }}"
             export AWS_REGION="${{ env.AWS_REGION }}"
-            export ECR_REGISTRY="${{ needs.build-and-push.outputs.ecr_registry }}"
 
-            # Set AWS credentials in the remote EC2 instance
-            echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> ~/.bash_profile
-            echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> ~/.bash_profile
-            echo "AWS_REGION=${{ env.AWS_REGION }}" >> ~/.bash_profile
-            source ~/.bash_profile
-
-            # Log in to Amazon ECR
-            aws ecr get-login-password --region \$AWS_REGION | docker login --username AWS --password-stdin \$ECR_REGISTRY
+            # Login to ECR using the token
+            echo "$ECR_AUTH_TOKEN" | docker login --username AWS --password-stdin ${{ needs.build-and-push.outputs.ecr_registry }}
 
             echo "Stopping old app container, with IMAGE_NAME: \$IMAGE_NAME"
             docker stop \$IMAGE_NAME || true
@@ -162,13 +174,14 @@ jobs:
             docker pull "\$IMAGE_URI" || exit 1
 
             echo "Ensuring app-network exists..."
-            docker network inspect app-network || docker network create app-network
+            docker network inspect app-network >/dev/null 2>&1 || docker network create app-network
 
             MYSQL_STATUS=\$(docker inspect -f '{{.State.Running}}' \$MYSQL_CONTAINER_NAME 2>/dev/null || echo "false")
             if [ "\$MYSQL_STATUS" != "true" ]; then
               echo "Starting MySQL container..."
               docker rm \$MYSQL_CONTAINER_NAME 2>/dev/null || true
               docker run -d --name \$MYSQL_CONTAINER_NAME \
+                --restart unless-stopped \
                 --network app-network \
                 -e MYSQL_ROOT_PASSWORD=\$MYSQL_ROOT_PASSWORD \
                 -e MYSQL_DATABASE=\$SPRING_DATASOURCE_DATABASE \
@@ -192,6 +205,7 @@ jobs:
 
             echo "Starting Spring Boot container..."
             docker run -d --name \$IMAGE_NAME \
+              --restart unless-stopped \
               --network app-network \
               -p 80:8080 \
               -e SPRING_PROFILES_ACTIVE=prod \
@@ -207,3 +221,7 @@ jobs:
             docker ps -a
             docker logs \$IMAGE_NAME --tail 50
           EOF
+
+          # Clean up the temporary credentials file from both local and remote
+          rm -f ~/.aws/credentials
+          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_PUBLIC_IP }} "rm -f ~/.aws/credentials"
