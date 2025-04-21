@@ -136,6 +136,7 @@ jobs:
       - name: Deploy Application to EC2
         env:
           ECR_REGISTRY: ${{ needs.build-and-push.outputs.ecr_registry }}
+          IMAGE_URI: ${{ needs.build-and-push.outputs.image_uri }}
         run: |
           # Create temporary AWS credentials file
           mkdir -p ~/.aws
@@ -159,7 +160,7 @@ jobs:
             set -e
 
             export IMAGE_NAME="${{ env.IMAGE_NAME }}"
-            export IMAGE_URI="\$IMAGE_URI"
+            export IMAGE_URI="${IMAGE_URI}"
             export MYSQL_CONTAINER_NAME="${{ env.MYSQL_CONTAINER_NAME }}"
             export MYSQL_ROOT_PASSWORD="${{ secrets.MYSQL_ROOT_PASSWORD }}"
             export SPRING_DATASOURCE_DATABASE="${{ env.SPRING_DATASOURCE_DATABASE }}"
