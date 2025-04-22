@@ -1,107 +1,73 @@
-CREATE TABLE products (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    description TEXT NOT NULL,
-    price DECIMAL(19, 2) NOT NULL,
+CREATE TABLE products
+(
+    id             BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    name           VARCHAR(255)   NOT NULL,
+    description    TEXT           NOT NULL,
+    price          DECIMAL(19, 2) NOT NULL,
     stock_quantity INT,
-    category VARCHAR(50),
-    created_at TIMESTAMP,
-    updated_at TIMESTAMP,
-    INDEX idx_product_name (name),
-    INDEX idx_product_category (category)
+    category       VARCHAR(50),
+    created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at     DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX          idx_product_name (name),
+    INDEX          idx_product_category (category)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 -- Add a comment to the table
 ALTER TABLE products COMMENT = 'Stores product information including inventory and pricing data';
 
 -- Initialize the table with sample data
-INSERT INTO
-    products (
-        name,
-        description,
-        price,
-        stock_quantity,
-        category,
-        created_at
-    )
-VALUES
-    (
-        'MacBook Pro 16-inch',
+INSERT INTO products (name,
+                      description,
+                      price,
+                      stock_quantity,
+                      category)
+VALUES ('MacBook Pro 16-inch',
         'Apple MacBook Pro with M3 chip, 16GB RAM, 512GB SSD',
         2499.99,
         50,
-        'ELECTRONICS',
-        NOW ()
-    ),
-    (
-        'Samsung 65" QLED 4K TV',
+        'ELECTRONICS'),
+       ('Samsung 65" QLED 4K TV',
         '65-inch QLED 4K Smart TV with Alexa built-in',
         1299.99,
         30,
-        'ELECTRONICS',
-        NOW ()
-    ),
-    (
-        'Men''s Classic Fit Dress Shirt',
+        'ELECTRONICS'),
+       ('Men''s Classic Fit Dress Shirt',
         '100% Cotton non-iron dress shirt, available in multiple colors',
         59.95,
         200,
-        'CLOTHING',
-        NOW ()
-    ),
-    (
-        'Women''s Running Jacket',
+        'CLOTHING'),
+       ('Women''s Running Jacket',
         'Lightweight, water-resistant running jacket with reflective details',
         89.95,
         150,
-        'CLOTHING',
-        NOW ()
-    ),
-    (
-        'The Psychology of Money',
+        'CLOTHING'),
+       ('The Psychology of Money',
         'Timeless lessons on wealth, greed, and happiness by Morgan Housel',
         19.99,
         100,
-        'BOOKS',
-        NOW ()
-    ),
-    (
-        'Atomic Habits',
+        'BOOKS'),
+       ('Atomic Habits',
         'An Easy & Proven Way to Build Good Habits & Break Bad Ones by James Clear',
         24.99,
         85,
-        'BOOKS',
-        NOW ()
-    ),
-    (
-        'Mid-Century Modern Sofa',
+        'BOOKS'),
+       ('Mid-Century Modern Sofa',
         'Comfortable 3-seater sofa with wooden legs and high-quality fabric upholstery',
         899.99,
         15,
-        'FURNITURE',
-        NOW ()
-    ),
-    (
-        'Adjustable Standing Desk',
+        'FURNITURE'),
+       ('Adjustable Standing Desk',
         'Electric height-adjustable desk with memory settings and spacious work surface',
         549.99,
         25,
-        'FURNITURE',
-        NOW ()
-    ),
-    (
-        'Leather Wallet',
+        'FURNITURE'),
+       ('Leather Wallet',
         'Genuine leather bifold wallet with RFID blocking technology',
         49.99,
         120,
-        'ACCESSORIES',
-        NOW ()
-    ),
-    (
-        'Stainless Steel Watch',
+        'ACCESSORIES'),
+       ('Stainless Steel Watch',
         'Waterproof stainless steel watch with automatic movement',
         299.99,
         40,
-        'ACCESSORIES',
-        NOW ()
-    );
+        'ACCESSORIES');

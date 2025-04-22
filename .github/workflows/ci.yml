@@ -7,11 +7,14 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE_NAME: sb-app-ec
+  CONTAINER_NAME: sb-app-ec
   MYSQL_CONTAINER_NAME: sb-app-mysql
   SPRING_DATASOURCE_DATABASE: sb-app-db
   AWS_REGION: eu-north-1
   ECR_REPOSITORY: qualy-taste
+  CONTAINER_PORT: 8080
+  HOST_PORT: 8080
+  NETWORK_NAME: app-network
 
 jobs:
   setup-ec2:
@@ -159,7 +162,7 @@ jobs:
           ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_PUBLIC_IP }} << EOF
             set -e
 
-            export IMAGE_NAME="${{ env.IMAGE_NAME }}"
+            export CONTAINER_NAME="${{ env.CONTAINER_NAME }}"
             export IMAGE_URI="${IMAGE_URI}"
             export MYSQL_CONTAINER_NAME="${{ env.MYSQL_CONTAINER_NAME }}"
             export MYSQL_ROOT_PASSWORD="${{ secrets.MYSQL_ROOT_PASSWORD }}"
@@ -167,19 +170,22 @@ jobs:
             export SPRING_DATASOURCE_USERNAME="${{ secrets.SPRING_DATASOURCE_USERNAME }}"
             export SPRING_DATASOURCE_PASSWORD="${{ secrets.SPRING_DATASOURCE_PASSWORD }}"
             export AWS_REGION="${{ env.AWS_REGION }}"
+            export NETWORK_NAME="${{ env.NETWORK_NAME }}"
+            export CONTAINER_PORT="${{ env.CONTAINER_PORT }}"
+            export HOST_PORT="${{ env.HOST_PORT }}"
 
             # Login to ECR using the token
             echo "$ECR_AUTH_TOKEN" | docker login --username AWS --password-stdin $ECR_REGISTRY
 
-            echo "Stopping old app container, with IMAGE_NAME: \$IMAGE_NAME"
-            docker stop \$IMAGE_NAME || true
-            docker rm -f \$IMAGE_NAME || true
+            echo "Stopping old app container, with CONTAINER_NAME: \$CONTAINER_NAME"
+            docker stop \$CONTAINER_NAME || true
+            docker rm -f \$CONTAINER_NAME || true
 
             echo "Pulling image from ECR, with IMAGE_URI: \$IMAGE_URI"
             docker pull "\$IMAGE_URI" || exit 1
 
-            echo "Ensuring app-network exists..."
-            docker network inspect app-network >/dev/null 2>&1 || docker network create app-network
+            echo "Ensuring network exists..."
+            docker network inspect \$NETWORK_NAME  >/dev/null 2>&1 || docker network create \$NETWORK_NAME
 
             MYSQL_STATUS=\$(docker inspect -f '{{.State.Running}}' \$MYSQL_CONTAINER_NAME 2>/dev/null || echo "false")
             if [ "\$MYSQL_STATUS" != "true" ]; then
@@ -187,9 +193,10 @@ jobs:
               docker rm \$MYSQL_CONTAINER_NAME 2>/dev/null || true
               docker run -d --name \$MYSQL_CONTAINER_NAME \
                 --restart unless-stopped \
-                --network app-network \
-                --cpus="1.0" \
+                --network \$NETWORK_NAME \
+                --cpus="0.5" \
                 --memory="1g" \
+                --memory-swap="1g" \
                 -e MYSQL_ROOT_PASSWORD=\$MYSQL_ROOT_PASSWORD \
                 -e MYSQL_DATABASE=\$SPRING_DATASOURCE_DATABASE \
                 -e MYSQL_USER=\$SPRING_DATASOURCE_USERNAME \
@@ -207,16 +214,17 @@ jobs:
               done
             else
               echo "MySQL already running."
-              docker network connect app-network \$MYSQL_CONTAINER_NAME || true
+              docker network connect \$NETWORK_NAME  \$MYSQL_CONTAINER_NAME || true
             fi
 
             echo "Starting Spring Boot container..."
-            docker run -d --name \$IMAGE_NAME \
+            docker run -d --name \$CONTAINER_NAME \
               --restart unless-stopped \
-              --network app-network \
+              --network \$NETWORK_NAME  \
               --cpus="1.0" \
-              --memory="1g" \
-              -p 80:8080 \
+              --memory="768m" \
+              --memory-swap="1g" \
+              -p $HOST_PORT:$CONTAINER_PORT \
               -e SPRING_PROFILES_ACTIVE=prod \
               -e SPRING_DATASOURCE_URL="jdbc:mysql://\$MYSQL_CONTAINER_NAME:3306/\$SPRING_DATASOURCE_DATABASE?useSSL=false&allowPublicKeyRetrieval=true&connectionTimeout=5000" \
               -e SPRING_DATASOURCE_USERNAME=\$SPRING_DATASOURCE_USERNAME \
@@ -228,7 +236,7 @@ jobs:
 
             echo "Deployment complete. Showing logs:"
             docker ps -a
-            docker logs \$IMAGE_NAME --tail 50
+            docker logs \$CONTAINER_NAME --tail 50
           EOF
 
           # Clean up the temporary credentials file from both local and remote
