@@ -10,7 +10,7 @@
     </parent>
     <groupId>io.ermix</groupId>
     <artifactId>sbAppEc</artifactId>
-    <version>0.0.8</version>
+    <version>0.0.9</version>
     <name>sbAppEc</name>
     <description>This a full stack sbAppEc project</description>
     <url/>

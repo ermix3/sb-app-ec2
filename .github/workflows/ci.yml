@@ -10,7 +10,6 @@ env:
   CONTAINER_NAME: sb-app-ec
   MYSQL_CONTAINER_NAME: sb-app-mysql
   SPRING_DATASOURCE_DATABASE: sb-app-db
-  AWS_REGION: ${{ secrets.AWS_REGION }}
   CONTAINER_PORT: 8080
   HOST_PORT: 8080
   NETWORK_NAME: app-network
@@ -30,7 +29,7 @@ jobs:
 
       - name: Ensure Docker is installed on EC2
         run: |
-          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_PUBLIC_IP }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_SSH_USERNAME }}@${{ secrets.EC2_PUBLIC_IP }} << EOF
             set -e
             if ! command -v docker &> /dev/null; then
               echo "Installing Docker..."
@@ -38,7 +37,7 @@ jobs:
               sudo yum install -y docker
               sudo systemctl start docker
               sudo systemctl enable docker
-              sudo usermod -aG docker ec2-user
+              sudo usermod -aG docker ${{ secrets.EC2_SSH_USERNAME }}
               echo "Docker installed."
             else
               echo "Docker already installed."
@@ -85,7 +84,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Log in to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
@@ -122,14 +121,14 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Log in to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Deploy Application to EC2
         run: |
-          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_PUBLIC_IP }} << EOF
+          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_SSH_USERNAME }}@${{ secrets.EC2_PUBLIC_IP }} << EOF
             set -e
 
             export CONTAINER_NAME="${{ env.CONTAINER_NAME }}"
@@ -218,7 +217,7 @@ jobs:
 
           # Clean up the temporary credentials file from both local and remote
           rm -f ~/.aws/credentials
-          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_PUBLIC_IP }} "rm -f ~/.aws/credentials"
+          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_SSH_USERNAME }}@${{ secrets.EC2_PUBLIC_IP }} "rm -f ~/.aws/credentials"
 
       - name: Verify Deployment
         run: |
