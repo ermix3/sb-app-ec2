@@ -10,6 +10,8 @@ env:
   CONTAINER_NAME: sb-app-ec
   MYSQL_CONTAINER_NAME: sb-app-mysql
   SPRING_DATASOURCE_DATABASE: sb-app-db
+#  AWS_REGION: eu-north-1
+#  ECR_REPOSITORY: qualy-taste
   CONTAINER_PORT: 8080
   HOST_PORT: 8080
   NETWORK_NAME: app-network
@@ -29,7 +31,7 @@ jobs:
 
       - name: Ensure Docker is installed on EC2
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_SSH_USERNAME }}@${{ secrets.EC2_PUBLIC_IP }} << EOF
+          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_PUBLIC_IP }} << 'EOF'
             set -e
             if ! command -v docker &> /dev/null; then
               echo "Installing Docker..."
@@ -37,7 +39,7 @@ jobs:
               sudo yum install -y docker
               sudo systemctl start docker
               sudo systemctl enable docker
-              sudo usermod -aG docker ${{ secrets.EC2_SSH_USERNAME }}
+              sudo usermod -aG docker ec2-user
               echo "Docker installed."
             else
               echo "Docker already installed."
@@ -154,12 +156,11 @@ jobs:
           # Generate ECR auth token
           ECR_AUTH_TOKEN=$(aws ecr get-login-password --region ${{ env.AWS_REGION }})
 
-          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_SSH_USERNAME }}@${{ secrets.EC2_PUBLIC_IP }} << EOF
+          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_PUBLIC_IP }} << EOF
             set -e
 
             export CONTAINER_NAME="${{ env.CONTAINER_NAME }}"
             export IMAGE_URI="${IMAGE_URI}"
-            export ECR_REGISTRY="${ECR_REGISTRY}"
             export MYSQL_CONTAINER_NAME="${{ env.MYSQL_CONTAINER_NAME }}"
             export MYSQL_ROOT_PASSWORD="${{ secrets.MYSQL_ROOT_PASSWORD }}"
             export SPRING_DATASOURCE_DATABASE="${{ env.SPRING_DATASOURCE_DATABASE }}"
