@@ -52,5 +52,5 @@ application:
       - X-Requested-With
       - Access-Control-Request-Method
       - Access-Control-Request-Headers
-    allow-credentials: true
+    allow-credentials: false
     max-age: 3600
