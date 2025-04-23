@@ -128,11 +128,32 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
       - name: Deploy Application to EC2
         env:
           ECR_REGISTRY: ${{ needs.build-and-push.outputs.ecr_registry }}
           IMAGE_URI: ${{ needs.build-and-push.outputs.image_uri }}
         run: |
+          # Create temporary AWS credentials file
+          mkdir -p ~/.aws
+          cat > ~/.aws/credentials << EOL
+          [default]
+          aws_access_key_id=${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          region=${{ env.AWS_REGION }}
+          EOL
+
+          # First, ensure .aws directory exists on EC2
+          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_PUBLIC_IP }} "mkdir -p ~/.aws"
+
+          # Copy AWS credentials to EC2
+          scp -o StrictHostKeyChecking=no ~/.aws/credentials ec2-user@${{ secrets.EC2_PUBLIC_IP }}:~/.aws/credentials
+
+          # Generate ECR auth token
+          ECR_AUTH_TOKEN=$(aws ecr get-login-password --region ${{ env.AWS_REGION }})
+
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_SSH_USERNAME }}@${{ secrets.EC2_PUBLIC_IP }} << EOF
             set -e
 
@@ -150,21 +171,15 @@ jobs:
             export HOST_PORT="${{ env.HOST_PORT }}"
             export FRONTEND_URL="${{ env.FRONTEND_URI }}"
 
-            echo "Logging into ECR registry for region: \$AWS_REGION and registry: \$ECR_REGISTRY..."
-            aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin \$ECR_REGISTRY || {
-              echo "::error::Failed to login to ECR"
-              exit 1
-            }
+            # Login to ECR using the token
+            echo "$ECR_AUTH_TOKEN" | docker login --username AWS --password-stdin $ECR_REGISTRY
 
             echo "Stopping old app container: \$CONTAINER_NAME"
             docker stop \$CONTAINER_NAME || true
             docker rm -f \$CONTAINER_NAME || true
 
             echo "Pulling image: \$IMAGE_URI"
-            docker pull "\$IMAGE_URI" || {
-                echo "::error::Failed to pull image"
-                exit 1
-            }
+            docker pull "\$IMAGE_URI" || exit 1
 
             echo "Ensuring network exists..."
             docker network inspect \$NETWORK_NAME >/dev/null 2>&1 || docker network create \$NETWORK_NAME
@@ -221,6 +236,11 @@ jobs:
             docker ps -a
             docker logs \$CONTAINER_NAME --tail 50
           EOF
+
+          # Clean up the temporary credentials file from both local and remote
+          rm -f ~/.aws/credentials
+          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_PUBLIC_IP }} "rm -f ~/.aws/credentials"
+
 
       - name: Verify Deployment
         run: |
