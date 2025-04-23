@@ -11,6 +11,9 @@ env:
   MYSQL_CONTAINER_NAME: sb-app-mysql
   SPRING_DATASOURCE_DATABASE: sb-app-db
   AWS_REGION: eu-north-1
+  ECR_REPOSITORY: qt-be
+#  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+#  AWS_REGION: ${{ secrets.AWS_REGION }}
   CONTAINER_PORT: 8080
   HOST_PORT: 8080
   NETWORK_NAME: app-network
@@ -98,15 +101,14 @@ jobs:
         env:
           IMAGE_TAG: ${{ steps.extract_version.outputs.version }}
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
-          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
         run: |
-          IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          IMAGE_URI=$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
           docker build -t $IMAGE_URI .
-          docker tag $IMAGE_URI $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker tag $IMAGE_URI $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest
 
           # Push both tags
           docker push $IMAGE_URI
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest
 
           echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
           echo "Image successfully pushed to ECR: $IMAGE_URI"
