@@ -136,7 +136,7 @@ jobs:
 
       - name: Deploy Application to EC2
         env:
-          ECR_REGISTRY: ${{ needs.build-and-push.outputs.ecr_registry }}
+          ECR_REGISTRY: ${{ needs.build-and-push.outputs.registry }}
           IMAGE_URI: ${{ needs.build-and-push.outputs.image_uri }}
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_SSH_USERNAME }}@${{ secrets.EC2_PUBLIC_IP }} << EOF
@@ -225,7 +225,6 @@ jobs:
             docker ps -a
             docker logs \$CONTAINER_NAME --tail 50
           EOF
-
 
       - name: Verify Deployment
         run: |
