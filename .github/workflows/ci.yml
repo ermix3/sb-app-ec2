@@ -10,8 +10,7 @@ env:
   CONTAINER_NAME: sb-app-ec
   MYSQL_CONTAINER_NAME: sb-app-mysql
   SPRING_DATASOURCE_DATABASE: sb-app-db
-#  AWS_REGION: eu-north-1
-  AWS_REGION: "${{ secrets.AWS_REGION }}"
+  AWS_REGION: eu-north-1
   CONTAINER_PORT: 8080
   HOST_PORT: 8080
   NETWORK_NAME: app-network
