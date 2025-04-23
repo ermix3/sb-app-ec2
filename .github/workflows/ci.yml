@@ -232,7 +232,7 @@ jobs:
               -e SPRING_FLYWAY_ENABLED=true \
               -e SPRING_FLYWAY_LOCATIONS=classpath:db/migration \
               -e SPRING_FLYWAY_BASELINE_ON_MIGRATION=true \
-              -e FRONTEND_URL=${{ secrets.EC2_PUBLIC_IP }}:$HOST_PORT \
+              -e FRONTEND_URL=${{ secrets.EC2_PUBLIC_IP }} \
               \$IMAGE_URI
 
             echo "Deployment complete. Showing logs:"
