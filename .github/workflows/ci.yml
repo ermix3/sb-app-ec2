@@ -10,8 +10,8 @@ env:
   CONTAINER_NAME: sb-app-ec
   MYSQL_CONTAINER_NAME: sb-app-mysql
   SPRING_DATASOURCE_DATABASE: sb-app-db
-#  AWS_REGION: eu-north-1
-#  ECR_REPOSITORY: qualy-taste
+  AWS_REGION: eu-north-1
+  ECR_REPOSITORY: qualy-taste
   CONTAINER_PORT: 8080
   HOST_PORT: 8080
   NETWORK_NAME: app-network
@@ -88,7 +88,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Log in to Amazon ECR
         id: ecr-login
@@ -100,13 +100,13 @@ jobs:
           IMAGE_TAG: ${{ steps.extract_version.outputs.version }}
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
         run: |
-          IMAGE_URI=$ECR_REGISTRY/${{ secrets.ECR_REPOSITORY }}:$IMAGE_TAG
+          IMAGE_URI=$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
           docker build -t $IMAGE_URI .
-          docker tag $IMAGE_URI $ECR_REGISTRY/${{ secrets.ECR_REPOSITORY }}:latest
+          docker tag $IMAGE_URI $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest
 
           # Push both tags
           docker push $IMAGE_URI
-          docker push $ECR_REGISTRY/${{ secrets.ECR_REPOSITORY }}:latest
+          docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest
 
           echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
           echo "Image successfully pushed to ECR: $IMAGE_URI"
@@ -128,7 +128,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Log in to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
@@ -144,7 +144,7 @@ jobs:
           [default]
           aws_access_key_id=${{ secrets.AWS_ACCESS_KEY_ID }}
           aws_secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          region=${{ secrets.AWS_REGION }}
+          region=${{ env.AWS_REGION }}
           EOL
 
           # First, ensure .aws directory exists on EC2
@@ -154,7 +154,7 @@ jobs:
           scp -o StrictHostKeyChecking=no ~/.aws/credentials ec2-user@${{ secrets.EC2_PUBLIC_IP }}:~/.aws/credentials
 
           # Generate ECR auth token
-          ECR_AUTH_TOKEN=$(aws ecr get-login-password --region ${{ secrets.AWS_REGION }})
+          ECR_AUTH_TOKEN=$(aws ecr get-login-password --region ${{ env.AWS_REGION }})
 
           ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_PUBLIC_IP }} << EOF
             set -e
@@ -166,7 +166,7 @@ jobs:
             export SPRING_DATASOURCE_DATABASE="${{ env.SPRING_DATASOURCE_DATABASE }}"
             export SPRING_DATASOURCE_USERNAME="${{ secrets.SPRING_DATASOURCE_USERNAME }}"
             export SPRING_DATASOURCE_PASSWORD="${{ secrets.SPRING_DATASOURCE_PASSWORD }}"
-            export AWS_REGION="${{ secrets.AWS_REGION }}"
+            export AWS_REGION="${{ env.AWS_REGION }}"
             export NETWORK_NAME="${{ env.NETWORK_NAME }}"
             export CONTAINER_PORT="${{ env.CONTAINER_PORT }}"
             export HOST_PORT="${{ env.HOST_PORT }}"
