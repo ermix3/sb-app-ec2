@@ -151,11 +151,10 @@ jobs:
             export FRONTEND_URL="${{ env.FRONTEND_URI }}"
 
             echo "Logging into ECR registry for region: \$AWS_REGION and registry: \$ECR_REGISTRY..."
-            echo "$ECR_AUTH_TOKEN" | docker login --username AWS --password-stdin \$ECR_REGISTRY || {
+            aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin \$ECR_REGISTRY || {
               echo "::error::Failed to login to ECR"
               exit 1
             }
-
 
             echo "Stopping old app container: \$CONTAINER_NAME"
             docker stop \$CONTAINER_NAME || true
