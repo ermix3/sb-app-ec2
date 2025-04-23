@@ -10,10 +10,7 @@ env:
   CONTAINER_NAME: sb-app-ec
   MYSQL_CONTAINER_NAME: sb-app-mysql
   SPRING_DATASOURCE_DATABASE: sb-app-db
-#  AWS_REGION: eu-north-1
-#  ECR_REPOSITORY: qt-be
   AWS_REGION: ${{ secrets.AWS_REGION }}
-  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
   CONTAINER_PORT: 8080
   HOST_PORT: 8080
   NETWORK_NAME: app-network
@@ -58,7 +55,6 @@ jobs:
     outputs:
       version: ${{ steps.extract_version.outputs.version }}
       image_uri: ${{ steps.push_image.outputs.image_uri }}
-      ecr_registry: ${{ steps.ecr-login.outputs.registry }}
 
     steps:
       - name: Checkout Code
@@ -93,22 +89,20 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Log in to Amazon ECR
-        id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and Push Docker Image
         id: push_image
         env:
           IMAGE_TAG: ${{ steps.extract_version.outputs.version }}
-          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
         run: |
-          IMAGE_URI=$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
+          IMAGE_URI=${{ secrets.ECR_REGISTRY }}:$IMAGE_TAG
           docker build -t $IMAGE_URI .
-          docker tag $IMAGE_URI $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest
+          docker tag $IMAGE_URI ${{ secrets.ECR_REGISTRY }}:latest
 
           # Push both tags
           docker push $IMAGE_URI
-          docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest
+          docker push ${{ secrets.ECR_REGISTRY }}:latest
 
           echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
           echo "Image successfully pushed to ECR: $IMAGE_URI"
@@ -137,7 +131,6 @@ jobs:
 
       - name: Deploy Application to EC2
         env:
-          ECR_REGISTRY: ${{ needs.build-and-push.outputs.ecr_registry }}
           IMAGE_URI: ${{ needs.build-and-push.outputs.image_uri }}
         run: |
           ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_PUBLIC_IP }} << EOF
@@ -160,9 +153,9 @@ jobs:
             export AWS_REGION="${{ secrets.AWS_REGION }}"
 
             # Login to ECR using the token
-             aws ecr get-login-password \
-             --region $AWS_REGION | \
-             docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+            aws ecr get-login-password \
+              --region $AWS_REGION | \
+              docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
 
             echo "Stopping old app container: \$CONTAINER_NAME"
             docker stop \$CONTAINER_NAME || true
