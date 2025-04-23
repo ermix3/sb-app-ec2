@@ -13,6 +13,7 @@ env:
   CONTAINER_PORT: 8080
   HOST_PORT: 8080
   NETWORK_NAME: app-network
+  FRONTEND_URI: "http://${{ secrets.EC2_PUBLIC_IP }}"
 
 jobs:
   setup-ec2:
@@ -75,10 +76,7 @@ jobs:
 
       - name: Extract version from pom.xml
         id: extract_version
-        run: |
-          VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Version: $VERSION"
+        run: echo "version=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)" >> $GITHUB_OUTPUT
 
       - name: Build Project
         run: mvn clean package -DskipTests
@@ -130,38 +128,17 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Log in to Amazon ECR
-        id: ecr-login
-        uses: aws-actions/amazon-ecr-login@v2
-
       - name: Deploy Application to EC2
         env:
           ECR_REGISTRY: ${{ needs.build-and-push.outputs.ecr_registry }}
           IMAGE_URI: ${{ needs.build-and-push.outputs.image_uri }}
         run: |
-          echo "Create temporary AWS credentials file"
-          mkdir -p ~/.aws
-          cat > ~/.aws/credentials << EOL
-          [default]
-          aws_access_key_id=${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws_secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          region=${{ secrets.AWS_REGION }}
-          EOL
-
-          echo "First, ensure .aws directory exists on EC2"
-          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_SSH_USERNAME }}@${{ secrets.EC2_PUBLIC_IP }} "mkdir -p ~/.aws"
-
-          echo "Copy AWS credentials to EC2"
-          scp -o StrictHostKeyChecking=no ~/.aws/credentials ${{ secrets.EC2_SSH_USERNAME }}@${{ secrets.EC2_PUBLIC_IP }}:~/.aws/credentials
-
-          echo "Generate ECR auth token"
-          ECR_AUTH_TOKEN=$(aws ecr get-login-password --region ${{ secrets.AWS_REGION }})
-
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_SSH_USERNAME }}@${{ secrets.EC2_PUBLIC_IP }} << EOF
             set -e
 
             export CONTAINER_NAME="${{ env.CONTAINER_NAME }}"
             export IMAGE_URI="${IMAGE_URI}"
+            export ECR_REGISTRY="${ECR_REGISTRY}"
             export MYSQL_CONTAINER_NAME="${{ env.MYSQL_CONTAINER_NAME }}"
             export MYSQL_ROOT_PASSWORD="${{ secrets.MYSQL_ROOT_PASSWORD }}"
             export SPRING_DATASOURCE_DATABASE="${{ env.SPRING_DATASOURCE_DATABASE }}"
@@ -171,12 +148,14 @@ jobs:
             export NETWORK_NAME="${{ env.NETWORK_NAME }}"
             export CONTAINER_PORT="${{ env.CONTAINER_PORT }}"
             export HOST_PORT="${{ env.HOST_PORT }}"
+            export FRONTEND_URL="${{ env.FRONTEND_URI }}"
 
             echo "Logging into ECR registry for region: \$AWS_REGION and registry: \$ECR_REGISTRY..."
             echo "$ECR_AUTH_TOKEN" | docker login --username AWS --password-stdin \$ECR_REGISTRY || {
               echo "::error::Failed to login to ECR"
               exit 1
             }
+
 
             echo "Stopping old app container: \$CONTAINER_NAME"
             docker stop \$CONTAINER_NAME || true
@@ -236,17 +215,13 @@ jobs:
               -e SPRING_FLYWAY_ENABLED=true \
               -e SPRING_FLYWAY_LOCATIONS=classpath:db/migration \
               -e SPRING_FLYWAY_BASELINE_ON_MIGRATION=true \
-              -e FRONTEND_URL=http://${{ secrets.EC2_PUBLIC_IP }} \
+              -e FRONTEND_URL=\$FRONTEND_URL \
               \$IMAGE_URI
 
             echo "Deployment complete. Showing logs:"
             docker ps -a
             docker logs \$CONTAINER_NAME --tail 50
           EOF
-
-          # Clean up the temporary credentials file from both local and remote
-          rm -f ~/.aws/credentials
-          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_SSH_USERNAME }}@${{ secrets.EC2_PUBLIC_IP }} "rm -f ~/.aws/credentials"
 
       - name: Verify Deployment
         run: |
