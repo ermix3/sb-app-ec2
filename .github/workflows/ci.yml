@@ -136,9 +136,27 @@ jobs:
 
       - name: Deploy Application to EC2
         env:
-          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          ECR_REGISTRY: ${{ needs.build-and-push.outputs.ecr_registry }}
           IMAGE_URI: ${{ needs.build-and-push.outputs.image_uri }}
         run: |
+          echo "Create temporary AWS credentials file"
+          mkdir -p ~/.aws
+          cat > ~/.aws/credentials << EOL
+          [default]
+          aws_access_key_id=${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          region=${{ secrets.AWS_REGION }}
+          EOL
+
+          echo "First, ensure .aws directory exists on EC2"
+          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_SSH_USERNAME }}@${{ secrets.EC2_PUBLIC_IP }} "mkdir -p ~/.aws"
+
+          echo "Copy AWS credentials to EC2"
+          scp -o StrictHostKeyChecking=no ~/.aws/credentials ${{ secrets.EC2_SSH_USERNAME }}@${{ secrets.EC2_PUBLIC_IP }}:~/.aws/credentials
+
+          echo "Generate ECR auth token"
+          ECR_AUTH_TOKEN=$(aws ecr get-login-password --region ${{ secrets.AWS_REGION }})
+
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_SSH_USERNAME }}@${{ secrets.EC2_PUBLIC_IP }} << EOF
             set -e
 
@@ -155,7 +173,7 @@ jobs:
             export HOST_PORT="${{ env.HOST_PORT }}"
 
             echo "Logging into ECR registry for region: \$AWS_REGION and registry: \$ECR_REGISTRY..."
-            aws ecr get-login-password --region \$AWS_REGION | docker login --username AWS --password-stdin \$ECR_REGISTRY || {
+            echo "$ECR_AUTH_TOKEN" | docker login --username AWS --password-stdin \$ECR_REGISTRY || {
               echo "::error::Failed to login to ECR"
               exit 1
             }
@@ -225,6 +243,10 @@ jobs:
             docker ps -a
             docker logs \$CONTAINER_NAME --tail 50
           EOF
+
+          # Clean up the temporary credentials file from both local and remote
+          rm -f ~/.aws/credentials
+          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_SSH_USERNAME }}@${{ secrets.EC2_PUBLIC_IP }} "rm -f ~/.aws/credentials"
 
       - name: Verify Deployment
         run: |
