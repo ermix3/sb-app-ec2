@@ -154,8 +154,8 @@ jobs:
             export CONTAINER_PORT="${{ env.CONTAINER_PORT }}"
             export HOST_PORT="${{ env.HOST_PORT }}"
 
-            echo "Logging into ECR registry..."
-            aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin $ECR_REGISTRY || {
+            echo "Logging into ECR registry for region: \$AWS_REGION and registry: \$ECR_REGISTRY..."
+            aws ecr get-login-password --region \$AWS_REGION | docker login --username AWS --password-stdin \$ECR_REGISTRY || {
               echo "::error::Failed to login to ECR"
               exit 1
             }
