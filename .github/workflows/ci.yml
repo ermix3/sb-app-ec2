@@ -136,7 +136,7 @@ jobs:
 
       - name: Deploy Application to EC2
         env:
-          ECR_REGISTRY: ${{ needs.build-and-push.outputs.registry }}
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
           IMAGE_URI: ${{ needs.build-and-push.outputs.image_uri }}
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_SSH_USERNAME }}@${{ secrets.EC2_PUBLIC_IP }} << EOF
