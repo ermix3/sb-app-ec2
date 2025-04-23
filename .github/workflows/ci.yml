@@ -154,7 +154,7 @@ jobs:
           scp -o StrictHostKeyChecking=no ~/.aws/credentials ec2-user@${{ secrets.EC2_PUBLIC_IP }}:~/.aws/credentials
 
           # Generate ECR auth token
-          ECR_AUTH_TOKEN=$(aws ecr get-login-password --region $AWS_REGION
+          ECR_AUTH_TOKEN=$(aws ecr get-login-password --region $AWS_REGION)
 
           ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_PUBLIC_IP }} << EOF
             set -e
