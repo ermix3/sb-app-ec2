@@ -139,12 +139,7 @@ jobs:
           ECR_REGISTRY: ${{ needs.build-and-push.outputs.ecr_registry }}
           IMAGE_URI: ${{ needs.build-and-push.outputs.image_uri }}
         run: |
-          set -e
-
-          # Generate fresh ECR auth token
-          ECR_AUTH_TOKEN=$(aws ecr get-login-password --region ${{ secrets.AWS_REGION }})
-
-          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_SSH_USERNAME }}@${{ secrets.EC2_PUBLIC_IP }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_SSH_USERNAME }}@${{ secrets.EC2_PUBLIC_IP }} << EOF
             set -e
 
             export CONTAINER_NAME="${{ env.CONTAINER_NAME }}"
@@ -160,23 +155,23 @@ jobs:
             export HOST_PORT="${{ env.HOST_PORT }}"
 
             echo "Logging into ECR registry..."
-            echo "$ECR_AUTH_TOKEN" | docker login --username AWS --password-stdin $ECR_REGISTRY || {
+            aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin $ECR_REGISTRY || {
               echo "::error::Failed to login to ECR"
               exit 1
             }
 
-            echo "Stopping old app container, with CONTAINER_NAME: \$CONTAINER_NAME"
-            docker stop $CONTAINER_NAME || true
-            docker rm -f $CONTAINER_NAME || true
+            echo "Stopping old app container: \$CONTAINER_NAME"
+            docker stop \$CONTAINER_NAME || true
+            docker rm -f \$CONTAINER_NAME || true
 
-            echo "Pulling image from ECR, with IMAGE_URI: \$IMAGE_URI"
-            docker pull "$IMAGE_URI" || {
+            echo "Pulling image: \$IMAGE_URI"
+            docker pull "\$IMAGE_URI" || {
                 echo "::error::Failed to pull image"
                 exit 1
-             }
+            }
 
             echo "Ensuring network exists..."
-            docker network inspect \$NETWORK_NAME  >/dev/null 2>&1 || docker network create \$NETWORK_NAME
+            docker network inspect \$NETWORK_NAME >/dev/null 2>&1 || docker network create \$NETWORK_NAME
 
             MYSQL_STATUS=\$(docker inspect -f '{{.State.Running}}' \$MYSQL_CONTAINER_NAME 2>/dev/null || echo "false")
             if [ "\$MYSQL_STATUS" != "true" ]; then
@@ -205,17 +200,17 @@ jobs:
               done
             else
               echo "MySQL already running."
-              docker network connect \$NETWORK_NAME  \$MYSQL_CONTAINER_NAME || true
+              docker network connect \$NETWORK_NAME \$MYSQL_CONTAINER_NAME || true
             fi
 
             echo "Starting Spring Boot container..."
             docker run -d --name \$CONTAINER_NAME \
               --restart unless-stopped \
-              --network \$NETWORK_NAME  \
+              --network \$NETWORK_NAME \
               --cpus="1.0" \
               --memory="768m" \
               --memory-swap="1g" \
-              -p $HOST_PORT:$CONTAINER_PORT \
+              -p \$HOST_PORT:\$CONTAINER_PORT \
               -e SPRING_PROFILES_ACTIVE=prod \
               -e SPRING_DATASOURCE_URL="jdbc:mysql://\$MYSQL_CONTAINER_NAME:3306/\$SPRING_DATASOURCE_DATABASE?useSSL=false&allowPublicKeyRetrieval=true&connectionTimeout=5000" \
               -e SPRING_DATASOURCE_USERNAME=\$SPRING_DATASOURCE_USERNAME \
@@ -231,9 +226,6 @@ jobs:
             docker logs \$CONTAINER_NAME --tail 50
           EOF
 
-          # Clean up the temporary credentials file from both local and remote
-          rm -f ~/.aws/credentials
-          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_SSH_USERNAME }}@${{ secrets.EC2_PUBLIC_IP }} "rm -f ~/.aws/credentials"
 
       - name: Verify Deployment
         run: |
