@@ -139,25 +139,12 @@ jobs:
           ECR_REGISTRY: ${{ needs.build-and-push.outputs.ecr_registry }}
           IMAGE_URI: ${{ needs.build-and-push.outputs.image_uri }}
         run: |
-          # Create temporary AWS credentials file
-          mkdir -p ~/.aws
-          cat > ~/.aws/credentials << EOL
-          [default]
-          aws_access_key_id=${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws_secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          region=${{ secrets.AWS_REGION }}
-          EOL
+          set -e
 
-          # First, ensure .aws directory exists on EC2
-          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_SSH_USERNAME }}@${{ secrets.EC2_PUBLIC_IP }} "mkdir -p ~/.aws"
-
-          # Copy AWS credentials to EC2
-          scp -o StrictHostKeyChecking=no ~/.aws/credentials ${{ secrets.EC2_SSH_USERNAME }}@${{ secrets.EC2_PUBLIC_IP }}:~/.aws/credentials
-
-          # Generate ECR auth token
+          # Generate fresh ECR auth token
           ECR_AUTH_TOKEN=$(aws ecr get-login-password --region ${{ secrets.AWS_REGION }})
 
-          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_SSH_USERNAME }}@${{ secrets.EC2_PUBLIC_IP }} << EOF
+          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_SSH_USERNAME }}@${{ secrets.EC2_PUBLIC_IP }} << 'EOF'
             set -e
 
             export CONTAINER_NAME="${{ env.CONTAINER_NAME }}"
@@ -172,15 +159,21 @@ jobs:
             export CONTAINER_PORT="${{ env.CONTAINER_PORT }}"
             export HOST_PORT="${{ env.HOST_PORT }}"
 
-            # Login to ECR using the token
-            echo "$ECR_AUTH_TOKEN" | docker login --username AWS --password-stdin $ECR_REGISTRY
+            echo "Logging into ECR registry..."
+            echo "$ECR_AUTH_TOKEN" | docker login --username AWS --password-stdin $ECR_REGISTRY || {
+              echo "::error::Failed to login to ECR"
+              exit 1
+            }
 
             echo "Stopping old app container, with CONTAINER_NAME: \$CONTAINER_NAME"
-            docker stop \$CONTAINER_NAME || true
-            docker rm -f \$CONTAINER_NAME || true
+            docker stop $CONTAINER_NAME || true
+            docker rm -f $CONTAINER_NAME || true
 
             echo "Pulling image from ECR, with IMAGE_URI: \$IMAGE_URI"
-            docker pull "\$IMAGE_URI" || exit 1
+            docker pull "$IMAGE_URI" || {
+                echo "::error::Failed to pull image"
+                exit 1
+             }
 
             echo "Ensuring network exists..."
             docker network inspect \$NETWORK_NAME  >/dev/null 2>&1 || docker network create \$NETWORK_NAME
