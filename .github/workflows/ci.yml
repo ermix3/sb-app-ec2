@@ -156,6 +156,10 @@ jobs:
             docker stop \$CONTAINER_NAME || true
             docker rm -f \$CONTAINER_NAME || true
 
+            echo "Removing unused containers and images..."
+            docker container prune -f
+            docker image prune -f
+
             echo "Pulling image: \$ECR_IMAGE"
             docker pull "\$ECR_IMAGE" || exit 1
 
